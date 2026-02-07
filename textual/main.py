@@ -1,3 +1,11 @@
+"""
+Docstring for textual.main
+
+Defines the main program implementation (Sprint 1)
+
+Classes are screens which are popped and pushed off the view stack
+"""
+
 from dataclasses import dataclass
 
 from time import sleep
@@ -54,10 +62,15 @@ class BaseCLIScreen(Screen):
 
 
 class LoginScreen(BaseCLIScreen):
+    """Login screen with username and password prompt."""
     step: reactive[str] = reactive("username") # username -> password
 
     def on_mount(self) -> None:
         super().on_mount()
+        app = self.get_app()
+        self._log(f"Welcome to {app.TITLE}!")
+        self._log("Recommends games based on user preferences.")
+        self._log("")
         self._log("Log in with your credentials to begin.")
         self._log("Submit with Enter.")
         self._switch_to_username_mode()
@@ -108,34 +121,165 @@ class LoginScreen(BaseCLIScreen):
             
 
 class HomeScreen(BaseCLIScreen):
-    
+    """Home screen with command implementation, traverse to different views"""
     def on_mount(self) -> None:
         super().on_mount()
         app = self.get_app()
         self._log(f"{app.auth.username} welcome to Game Recommender!")
+        self._log("Here you can generate your recommendations or view/edit preferences.")
         self._log("Type 'help' to see commands.")
+        self._log("")
+        self._log("Your changes are associated with your user if you quit the app.")
+        self._log("")
+        self._log("If you're a new user, type the 'quick start' command to have\ninstructions you can follow for preference setup and a generation\nprinted on the screen!")
 
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        raw = event.value.strip()
+        self.clear_input()
+        if not raw:
+            return
+        
+        cmd, *args = raw.split()
+        await self._handle_commands(cmd, args)
+        
+    async def _handle_commands(self, cmd: str, args: list[str]) -> None:
+        """Handles commands associated with the screen"""
+        app = self.get_app()
+
+        match cmd.lower():
+            case "help":
+                self.print_help_message()
+            case "logout":
+                app.auth = AuthState()
+                app.pop_screen()
+                app.push_screen(LoginScreen())
+            case "exit":
+                await app.action_quit()
+            case "view":
+                if args[0] == "preferences":
+                    app.push_screen(ViewPreferences())
+                else:
+                    self._log("Second word in input is invalid.")
+            case "edit":
+                if args[0] == "preferences":
+                    app.push_screen(EditPreferences())
+                else:
+                    self._log("Second word in input is invalid.")
+            case "quick":
+                if args[0] == "start":
+                    self._log("Quick Start command entered.")
+                else:
+                    self._log("Second word in input is invalid.")
+            case _:
+                self._log("Unrecognized input.")
+
+    def print_help_message(self) -> None:
+        self._log("")
+
+
+class ViewPreferences(BaseCLIScreen):
+    """Screen where user views the preferences associated with their account"""
+    def on_mount(self) -> None:
+        app = self.get_app()
+        self._log(f"Viewing preferences of {app.auth.username}")
+        self._log("Type 'help' to see commands.")
+    
     def on_input_submitted(self, event: Input.Submitted) -> None:
         raw = event.value.strip()
         self.clear_input()
         if not raw:
             return
         
-        app = self.get_app()
         cmd, *args = raw.split()
+        self._handle_commands(cmd, args)
+    
+    def _handle_commands(self, cmd: str, args: list[str]) -> None:
+        # return await super()._handle_commands(cmd, args)
+        app = self.get_app()
 
         match cmd.lower():
             case "help":
                 self._log("help command entered.")
-            case "logout":
-                app.auth = AuthState()
+            case "exit":
                 app.pop_screen()
-                app.push_screen(LoginScreen())
+            case "edit":
+                if args[0] == "preferences":
+                    app.pop_screen()
+                    app.push_screen(EditPreferences())
+                else:
+                    self._log("Second word in input is invalid.")
+            case _:
+                self._log("Unrecognized input.")
 
+
+class EditPreferences(BaseCLIScreen):
+    """Screen where user edits the preferences associated with their account"""
+    def on_mount(self) -> None:
+        app = self.get_app()
+        self._log(f"Editing preferences of {app.auth.username}")
+        self._log("Type 'exit' to return to the home screen or\nedit preferences to jump to the edit preferences screen.")
+        self._log("")
+        self._log("Preferences determine how the recommender\ndecides what to recommend.")
+    
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        raw = event.value.strip()
+        self.clear_input()
+        if not raw:
+            return
         
+        cmd, *args = raw.split()
+        self._handle_commands(cmd, args)
+    
+    def _handle_commands(self, cmd: str, args: list[str]) -> None:
+        # return await super()._handle_commands(cmd, args)
+        app = self.get_app()
+
+        match cmd.lower():
+            case "help":
+                self._log("help command entered.")
+            case "exit":
+                app.pop_screen()
+            case "edit":
+                if args[0] == "genre":
+                    app.push_screen(EditGenres())
+                else:
+                    self._log("Second word in input is invalid.")
 
 
+class EditGenres(BaseCLIScreen):
+    """Screen where user edits the genres associated with their account"""
+    def on_mount(self) -> None:
+        app = self.get_app()
+        self._log(f"Editing genres of {app.auth.username}")
+        self._log("Type 'exit' to return to the edit screen or\nadd/delete (a/d) followed by the name of the genre\nto add or remove a particular genre from your preferences.")
+        self._log("")
+        self._log("Genre Options: ")
+        self._log("")
+        self._log("Preferences determine how the recommender\ndecides what to recommend.")
+    
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        raw = event.value.strip()
+        self.clear_input()
+        if not raw:
+            return
+        
+        cmd, *args = raw.split()
+        self._handle_commands(cmd, args)
+    
+    def _handle_commands(self, cmd: str, args: list[str]) -> None:
+        # return await super()._handle_commands(cmd, args)
+        app = self.get_app()
 
+        match cmd.lower():
+            case "help":
+                self._log("help command entered.")
+            case "exit":
+                app.pop_screen()
+            case "edit":
+                if args[0] == "genre":
+                    app.push_screen(EditGenres())
+                else:
+                    self._log("Second word in input is invalid.")
 
 
 class GameRecommenderApp(App):
