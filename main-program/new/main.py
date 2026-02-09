@@ -15,66 +15,68 @@ from textual.widgets import Header, Input, RichLog
 from textual.screen import Screen
 from textual.reactive import reactive
 
-VALID_USERS = {
-    "test": "1234"
-}
-
-def validate_credentials(username: str, password: str) -> bool:
-    return username in VALID_USERS and password == VALID_USERS[username]
+from auth_and_preferences import User, validate_credentials, VALID_USERS
+import preference_options
 
 
-@dataclass
 class AuthState:
-    username: str = ""
-    # is_authed: bool = False
 
-
-@dataclass
-class PreferenceState:
-    prefs = {
-        "genres": [],
-        "release_range": (2000, 2005),
-        "number_of_players": 1,
-        "length": 5,
-    }
+    def __init__(self):
+        self.username = ""
+        self.user = User()
 
 
 class BaseCLIScreen(Screen):
-    """Screen with RichLog + Input, CLI-style"""
+    """
+    Base screen which is the parent of every other screen.
+    Includes widgets:
+      Header, unnamed
+      RichLog, "log"
+      Input, "cmd"
+      
+    CLI-style
+    """
 
     def compose(self) -> ComposeResult:
+        # Initializes widgets for the basic screen
         yield Header()
         yield RichLog(id="log")
         yield Input(id="cmd")
 
     def on_mount(self) -> None:
+        # Focuses on the input box and makes header invisible when the screen is initialized
         self.query_one("#cmd", Input).focus()
         self.query_one("HeaderIcon").visible = False
 
     def _log(self, text: str) -> None:
+        # Writes a text string to the RichLog widget on the screen
         self.query_one("#log", RichLog).write(text)
 
     def clear_input(self) -> None:
+        # Clears the text in the Input widget
         self.query_one("#cmd", Input).value = ""
 
     def get_app(self) -> "GameRecommenderApp":
+       # Grabs the application so the screen can interface with it
        return self.app # type: ignore[return-value]
 
 
 class LoginScreen(BaseCLIScreen):
     """Login screen with username and password prompt."""
+
+    # Username step and password step to facilitate collecting each from the user
     step: reactive[str] = reactive("username") # username -> password
 
     def on_mount(self) -> None:
         super().on_mount()
         app = self.get_app()
         self._log(f"Welcome to {app.TITLE}!")
-        self._log("Recommends games based on user preferences.")
-        self._log("")
+        self._log("Recommends games based on user preferences.\n")
         self._log("Log in with your credentials to begin.")
-        self._log("Submit with Enter.")
+        self._log("Submit with Enter.\n")
         self._switch_to_username_mode()
 
+    # What user interacts with to enter their username
     def _switch_to_username_mode(self) -> None:
         self.step = "username"
         inp = self.query_one("#cmd", Input)
@@ -82,6 +84,7 @@ class LoginScreen(BaseCLIScreen):
         inp.placeholder = "Enter Username: "
         self.clear_input()
 
+    # What user interacts with to enter their password
     def _switch_to_password_mode(self) -> None:
         self.step = "password"
         inp = self.query_one("#cmd", Input)
@@ -89,31 +92,31 @@ class LoginScreen(BaseCLIScreen):
         inp.placeholder = "Enter Password: "
         self.clear_input()
 
+    # Called when user presses enter with textbox highlighted
     def on_input_submitted(self, event: Input.Submitted) -> None:
         app = self.get_app()
-        inp = event.input
+        inp = event.input # What the user inputted
         raw = inp.value.strip()
 
         if self.step == "username":
-            if not raw:
+            if not raw: # If there's no input, do nothing
                 inp.focus()
                 return
-            app.auth.username = raw
+            app.auth.username = raw # Saves attempted username
             self._log(f"Attempting to login as {app.auth.username}...")
             self._switch_to_password_mode()
 
         elif self.step == "password":
-            if not raw:
+            if not raw: # If there's no input, do nothing
                 inp.focus()
                 return
             
-            ok = validate_credentials(app.auth.username, raw)
-            self.clear_input()
+            validated_user = validate_credentials(app.auth.username, raw)
 
-            if ok:
-                # app.auth.is_authed = True
-                self.app.pop_screen()
-                self.app.push_screen(HomeScreen())
+            if validated_user:
+                app.auth.user = validated_user
+                app.pop_screen()
+                app.push_screen(HomeScreen())
             else:
                 self._log("Authentication failed, try again.")
                 app.auth = AuthState()
@@ -127,10 +130,8 @@ class HomeScreen(BaseCLIScreen):
         app = self.get_app()
         self._log(f"{app.auth.username} welcome to Game Recommender!")
         self._log("Here you can generate your recommendations or view/edit preferences.")
-        self._log("Type 'help' to see commands.")
-        self._log("")
-        self._log("Your changes are associated with your user if you quit the app.")
-        self._log("")
+        self._log("Type 'help' to see commands.\n")
+        self._log("Your changes are associated with your user if you quit the app.\n")
         self._log("If you're a new user, type the 'quick start' command to have\ninstructions you can follow for preference setup and a generation\nprinted on the screen!")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -174,6 +175,7 @@ class HomeScreen(BaseCLIScreen):
                 self._log("Unrecognized input.")
 
     def print_help_message(self) -> None:
+        # Print help message associated with each command associated with screen
         self._log("")
 
 
@@ -182,7 +184,9 @@ class ViewPreferences(BaseCLIScreen):
     def on_mount(self) -> None:
         app = self.get_app()
         self._log(f"Viewing preferences of {app.auth.username}")
-        self._log("Type 'help' to see commands.")
+        self._log("Type 'help' to see commands.\n")
+        
+        self.print_user_preferences()
     
     def on_input_submitted(self, event: Input.Submitted) -> None:
         raw = event.value.strip()
@@ -211,15 +215,23 @@ class ViewPreferences(BaseCLIScreen):
             case _:
                 self._log("Unrecognized input.")
 
+    def print_user_preferences(self) -> None:
+        # Prints preference dictionary associated with user
+        prefs = self.get_app().auth.user.preferences
+        for preference in prefs.items():
+            self._log(preference[0] + ": " + str(preference[1]))
+
 
 class EditPreferences(BaseCLIScreen):
     """Screen where user edits the preferences associated with their account"""
     def on_mount(self) -> None:
         app = self.get_app()
         self._log(f"Editing preferences of {app.auth.username}")
-        self._log("Type 'exit' to return to the home screen or\nedit preferences to jump to the edit preferences screen.")
+        self._log("Type 'exit' to return to the home screen.")
         self._log("")
-        self._log("Preferences determine how the recommender\ndecides what to recommend.")
+        self._log("Preferences determine how the recommender\ndecides what to recommend.\n")
+
+        self.print_user_preferences()
     
     def on_input_submitted(self, event: Input.Submitted) -> None:
         raw = event.value.strip()
@@ -240,21 +252,30 @@ class EditPreferences(BaseCLIScreen):
             case "exit":
                 app.pop_screen()
             case "edit":
-                if args[0] == "genre":
-                    app.push_screen(EditGenres())
+                if args[0] in ("genre", "genres"):
+                    app.push_screen(EditPreference("genre"))
                 else:
                     self._log("Second word in input is invalid.")
 
+    def print_user_preferences(self) -> None:
+        # Prints preference dictionary associated with user
+        prefs = self.get_app().auth.user.preferences
+        for preference in prefs.items():
+            self._log(preference[0] + ": " + str(preference[1]))
 
-class EditGenres(BaseCLIScreen):
+
+class EditPreference(BaseCLIScreen):
     """Screen where user edits the genres associated with their account"""
+    def __init__(self, preference: str):
+        self.preference = preference
+
     def on_mount(self) -> None:
         app = self.get_app()
-        self._log(f"Editing genres of {app.auth.username}")
-        self._log("Type 'exit' to return to the edit screen or\nadd/delete (a/d) followed by the name of the genre\nto add or remove a particular genre from your preferences.")
-        self._log("")
-        self._log("Genre Options: ")
-        self._log("")
+        self._log(f"Editing {self.preference} of {app.auth.username}")
+        self._log("Type 'exit' to return to the edit screen or\nadd/delete (a/d) followed by the name of the genre\nto add or remove a particular genre from your preferences.\n")
+        self._log(f"{self.preference.capitalize()} Options: \n")
+        self.print_preference_options(self.preference)
+
         self._log("Preferences determine how the recommender\ndecides what to recommend.")
     
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -275,24 +296,23 @@ class EditGenres(BaseCLIScreen):
                 self._log("help command entered.")
             case "exit":
                 app.pop_screen()
-            case "edit":
-                if args[0] == "genre":
-                    app.push_screen(EditGenres())
-                else:
-                    self._log("Second word in input is invalid.")
+
+    def print_preference_options(self, preference: str):
+        # Logs all unique options the preference can be assigned
+        for option in preference_options.get_options(preference):
+            self.log(option)
 
 
 class GameRecommenderApp(App):
-    """Textual app which takes credentials sequentially"""
+    """Textual app which recommends games and interfaces with microservices"""
 
-    ENABLE_COMMAND_PALETTE = False
+    ENABLE_COMMAND_PALETTE = False # Off so user is constricted
     TITLE = "Game Recommender"
     SUB_TITLE = "Get recommendations for games based on your preferences!"
 
     def __init__(self):
-        super().__init__()
-        self.auth = AuthState()
-        self.preferences = PreferenceState()
+        super().__init__() # Initializes the app
+        self.auth = AuthState() # Sets the base authentication state for the app, changes after user login
 
     def on_mount(self) -> None:
         """Runs when the app is started."""
