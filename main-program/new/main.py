@@ -167,8 +167,10 @@ class HomeScreen(BaseCLIScreen):
                 else:
                     self._log("Second word in input is invalid.")
             case "quick":
+                if len(args) != 1:
+                    self._log("Too many arguments.")
                 if args[0] == "start":
-                    self._log("Quick Start command entered.")
+                    self.print_quick_start_message()
                 else:
                     self._log("Second word in input is invalid.")
             case _:
@@ -176,7 +178,17 @@ class HomeScreen(BaseCLIScreen):
 
     def print_help_message(self) -> None:
         # Print help message associated with each command associated with screen
-        self._log("")
+        self._log("\nhelp - Shows a list of commands with usage information")
+        self._log("logout - Log out of current user (returns to login screen)")
+        self._log("exit - Quits the application")
+        self._log("view preferences - Shows a screen with a list of current user's preferences")
+        self._log("edit preferences - Shows a screen with a list of current user's preferences and shows how to edit them")
+        self._log("quick start - Shows a basic guide for how to use this application")
+
+    def print_quick_start_message(self) -> None:
+        self._log("\nSince you're logged in, head to edit preferences!")
+        self._log("From there, edit whichever preference you want the recommender to consider.")
+        self._log("Once the preferences are to your liking, return home and run 'recommend games'\nto receive your recommendations!")
 
 
 class ViewPreferences(BaseCLIScreen):
@@ -184,7 +196,8 @@ class ViewPreferences(BaseCLIScreen):
     def on_mount(self) -> None:
         app = self.get_app()
         self._log(f"Viewing preferences of {app.auth.username}")
-        self._log("Type 'help' to see commands.\n")
+        self._log(f"Preferences determine how the recommender decides what to recommend.")
+        self._log("Type 'exit' to return to the home screen or 'edit preferences'\nto jump to that screen immediately.\n")
         
         self.print_user_preferences()
     
@@ -202,12 +215,12 @@ class ViewPreferences(BaseCLIScreen):
         app = self.get_app()
 
         match cmd.lower():
-            case "help":
-                self._log("help command entered.")
             case "exit":
                 app.pop_screen()
             case "edit":
-                if args[0] == "preferences":
+                if len(args) != 1:
+                    self._log("Too many arguments.")
+                elif args[0] == "preferences":
                     app.pop_screen()
                     app.push_screen(EditPreferences())
                 else:
@@ -227,9 +240,9 @@ class EditPreferences(BaseCLIScreen):
     def on_mount(self) -> None:
         app = self.get_app()
         self._log(f"Editing preferences of {app.auth.username}")
-        self._log("Type 'exit' to return to the home screen.")
-        self._log("")
-        self._log("Preferences determine how the recommender\ndecides what to recommend.\n")
+        self._log("Preferences determine how the recommender decides what to recommend.\n")
+        self._log("Type 'edit <preference>' or (e <preference>) followed by the name of the\npreference (e.g. genre) to go to a screen with\noptions to add or remove preferences.")
+        self._log("Type 'exit' to return to the home screen.\n")
 
         self.print_user_preferences()
     
@@ -247,15 +260,18 @@ class EditPreferences(BaseCLIScreen):
         app = self.get_app()
 
         match cmd.lower():
-            case "help":
-                self._log("help command entered.")
             case "exit":
                 app.pop_screen()
-            case "edit":
-                if args[0] in ("genre", "genres"):
+            case "edit" | "e":
+                if len(args) != 1:
+                    self._log("Too many arguments.")
+                elif args[0] in ("genre", "genres"):
+                    app.pop_screen()
                     app.push_screen(EditPreference("genre"))
                 else:
                     self._log("Second word in input is invalid.")
+            case _:
+                self._log("Unrecognized input.")
 
     def print_user_preferences(self) -> None:
         # Prints preference dictionary associated with user
@@ -267,17 +283,20 @@ class EditPreferences(BaseCLIScreen):
 class EditPreference(BaseCLIScreen):
     """Screen where user edits the genres associated with their account"""
     def __init__(self, preference: str):
+        super().__init__()
         self.preference = preference
+        self.valid_options = preference_options.get_options(self.preference)
 
     def on_mount(self) -> None:
         app = self.get_app()
         self._log(f"Editing {self.preference} of {app.auth.username}")
         self._log("Type 'exit' to return to the edit screen or\nadd/delete (a/d) followed by the name of the genre\nto add or remove a particular genre from your preferences.\n")
+        self._log("Preferences determine how the recommender\ndecides what to recommend.\n")
         self._log(f"{self.preference.capitalize()} Options: \n")
         self.print_preference_options(self.preference)
+        self._log("")
+        self.print_user_preference(self.preference)
 
-        self._log("Preferences determine how the recommender\ndecides what to recommend.")
-    
     def on_input_submitted(self, event: Input.Submitted) -> None:
         raw = event.value.strip()
         self.clear_input()
@@ -292,15 +311,36 @@ class EditPreference(BaseCLIScreen):
         app = self.get_app()
 
         match cmd.lower():
-            case "help":
-                self._log("help command entered.")
             case "exit":
                 app.pop_screen()
+                app.push_screen(EditPreferences())
+            case "add" | "a":
+                if len(args) != 1:
+                    self._log("Too many arguments.")
+                elif args[0] in self.valid_options:
+                    app.auth.user.add_preference(self.preference, args[0])
+                    self.print_user_preference(self.preference)
+                else:
+                    self._log("Invalid genre option.")
+            case "delete" | "d":
+                if len(args) != 1:
+                    self._log("Too many arguments.")
+                elif args[0] in self.valid_options:
+                    app.auth.user.delete_preference(self.preference, args[0])
+                    self.print_user_preference(self.preference)
+                else:
+                    self._log("Invalid genre option.")
+            case _:
+                self._log("Unrecognized input.")
 
     def print_preference_options(self, preference: str):
         # Logs all unique options the preference can be assigned
         for option in preference_options.get_options(preference):
-            self.log(option)
+            self._log(option)
+
+    def print_user_preference(self, preference: str):
+        preference_value = self.get_app().auth.user.preferences[preference]
+        self._log(preference + ": " + str(preference_value))
 
 
 class GameRecommenderApp(App):
